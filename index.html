@@ -162,10 +162,37 @@
             background: white; padding: 1rem 1.2rem; border-radius: 10px;
             box-shadow: 0 1px 6px rgba(0,0,0,0.04);
             display: flex; justify-content: space-between; align-items: center;
+            gap: 0.8rem; cursor: pointer; transition: border-color 0.2s, box-shadow 0.2s;
+        }
+        .member-card:hover { box-shadow: 0 4px 16px rgba(0,0,0,0.08); }
+        .member-card.expanded { border: 1.5px solid #2d6a4f; }
+        .member-left { display: flex; align-items: center; gap: 0.8rem; min-width: 0; }
+        .member-avatar {
+            width: 46px; height: 46px; border-radius: 50%; object-fit: cover;
+            background: #d8f3dc; flex-shrink: 0; cursor: pointer;
+            border: 2px solid #b7e4c7; display: flex; align-items: center; justify-content: center;
+            font-size: 1.1rem; font-weight: 700; color: #2d6a4f;
         }
         .member-card .name { font-weight: 600; color: #1b4332; font-size: 0.95rem; }
         .member-card .activities { font-size: 0.78rem; color: #888; }
         .member-card .badge { background: #d8f3dc; color: #2d6a4f; padding: 0.2rem 0.6rem; border-radius: 20px; font-size: 0.7rem; font-weight: 600; }
+        .member-detail {
+            display: none; margin-top: 0.6rem; padding-top: 0.6rem;
+            border-top: 1px dashed #e0f0e0; font-size: 0.8rem; color: #555;
+        }
+        .member-card.expanded .member-detail { display: block; }
+        .member-detail .row { padding: 0.15rem 0; }
+        .member-detail .row span:first-child { display: inline-block; min-width: 55px; color: #888; font-weight: 600; }
+        .show-more-btn {
+            grid-column: 1 / -1;
+            padding: 0.6rem 1.5rem; border: 1.5px solid #2d6a4f; border-radius: 20px;
+            background: white; color: #2d6a4f; font-size: 0.85rem; font-weight: 600;
+            cursor: pointer; transition: all 0.2s; justify-self: center;
+        }
+        .show-more-btn:hover { background: #2d6a4f; color: white; }
+        .avatar-upload { display: flex; align-items: center; gap: 0.8rem; cursor: pointer; }
+        .avatar-upload img { width: 60px; height: 60px; border-radius: 50%; object-fit: cover; border: 2px solid #d0e0d0; }
+        .avatar-upload .avatar-hint { font-size: 0.75rem; color: #888; }
         @media (max-width: 640px) { .member-log { grid-template-columns: 1fr; } }
 
         /* Footer */
@@ -240,8 +267,20 @@
                         <input type="text" id="regName" placeholder="e.g. Holly Sun" required>
                     </div>
                     <div class="form-field">
+                        <label for="regSchool">School / Organization</label>
+                        <input type="text" id="regSchool" placeholder="e.g. North Shore Country Day School">
+                    </div>
+                    <div class="form-field">
                         <label for="regEmail">Email</label>
                         <input type="email" id="regEmail" placeholder="e.g. holly@school.edu" required>
+                    </div>
+                    <div class="form-field">
+                        <label>Avatar (optional)</label>
+                        <div class="avatar-upload" onclick="document.getElementById('regAvatar').click()">
+                            <img id="regAvatarPreview" src="data:image/svg+xml;utf8,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20width='80'%20height='80'%3E%3Crect%20width='80'%20height='80'%20rx='40'%20fill='%23d8f3dc'/%3E%3Ctext%20x='40'%20y='50'%20font-size='32'%20text-anchor='middle'%20fill='%232d6a4f'%3E%2B%3C/text%3E%3C/svg%3E" alt="avatar">
+                            <input type="file" id="regAvatar" accept="image/*" hidden>
+                            <span class="avatar-hint">Click to upload photo</span>
+                        </div>
                     </div>
                     <button type="submit" class="btn">Join the Club</button>
                 </form>
@@ -254,20 +293,8 @@
         <div class="container">
             <h2>👥 Current Members</h2>
             <p class="lead">Registered members of the Environment Club.</p>
-            <div class="member-log" id="memberLog">
-                <div class="member-card">
-                    <div><div class="name">Elizabeth Laabs</div><div class="activities">Founding Member</div></div>
-                    <span class="badge">Member</span>
-                </div>
-                <div class="member-card">
-                    <div><div class="name">Holly Sun</div><div class="activities">Founding Member</div></div>
-                    <span class="badge">Member</span>
-                </div>
-                <div class="member-card">
-                    <div><div class="name">Amelia Sribna</div><div class="activities">Founding Member</div></div>
-                    <span class="badge">Member</span>
-                </div>
-            </div>
+            <div class="member-log" id="memberLog"></div>
+            <button class="show-more-btn" id="showMoreBtn" onclick="showMore()" hidden>Show all members</button>
         </div>
     </section>
 
@@ -278,48 +305,144 @@
 
     <script>
         const STORAGE_KEY = 'envClubMembers';
-        const founders = ['Elizabeth Laabs', 'Holly Sun', 'Amelia Sribna'];
+        const AVATAR_KEY = 'envClubAvatars';
+        const DISPLAY_LIMIT = 10;
+        let showAll = false;
+
+        const founders = [
+            { name: 'Elizabeth Laabs', school: 'North Shore Country Day School', email: '', founder: true },
+            { name: 'Holly Sun', school: 'North Shore Country Day School', email: 'hollysun8798@gmail.com', founder: true },
+            { name: 'Amelia Sribna', school: 'North Shore Country Day School', email: '', founder: true },
+        ];
 
         function getRegistrations() {
-            try {
-                return JSON.parse(localStorage.getItem(STORAGE_KEY)) || [];
-            } catch (e) { return []; }
+            try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) || []; } catch (e) { return []; }
+        }
+
+        function getAvatars() {
+            try { return JSON.parse(localStorage.getItem(AVATAR_KEY)) || {}; } catch (e) { return {}; }
+        }
+
+        function getInitial(name) {
+            return (name || '?').trim().charAt(0).toUpperCase();
         }
 
         function renderMembers() {
             const regs = getRegistrations();
+            const avatars = getAvatars();
             const container = document.getElementById('memberLog');
-            const newMembers = regs.map(r => `
-                <div class="member-card">
-                    <div><div class="name">${escapeHtml(r.name)}</div><div class="activities">New Member</div></div>
-                    <span class="badge">Member</span>
-                </div>
-            `).join('');
-            container.innerHTML = founders.map(name => `
-                <div class="member-card">
-                    <div><div class="name">${name}</div><div class="activities">Founding Member</div></div>
-                    <span class="badge">Member</span>
-                </div>
-            `).join('') + newMembers;
+            const all = [
+                ...founders.map(f => ({ ...f })),
+                ...regs.map(r => ({ name: r.name, school: r.school || '', email: r.email, founder: false }))
+            ];
+
+            let visible = showAll ? all : all.slice(0, DISPLAY_LIMIT);
+
+            container.innerHTML = visible.map(m => {
+                const avatar = avatars[m.name];
+                const avatarHtml = avatar
+                    ? `<img class="member-avatar" src="${avatar}" alt="avatar" onclick="event.stopPropagation();pickAvatar('${escapeAttr(m.name)}')">`
+                    : `<div class="member-avatar" onclick="event.stopPropagation();pickAvatar('${escapeAttr(m.name)}')">${getInitial(m.name)}</div>`;
+                return `
+                    <div class="member-card" onclick="toggleMember(this)">
+                        <div class="member-left">
+                            ${avatarHtml}
+                            <div>
+                                <div class="name">${escapeHtml(m.name)} ${m.founder ? '<span class="badge">Founding Member</span>' : ''}</div>
+                                <div class="activities">${m.founder ? 'Founding Member' : 'New Member'} · click for details</div>
+                            </div>
+                        </div>
+                        <div class="member-detail">
+                            <div class="row"><span>Name:</span> ${escapeHtml(m.name)}</div>
+                            ${m.school ? `<div class="row"><span>School:</span> ${escapeHtml(m.school)}</div>` : ''}
+                            ${m.email ? `<div class="row"><span>Email:</span> ${escapeHtml(m.email)}</div>` : ''}
+                        </div>
+                    </div>
+                `;
+            }).join('');
+
+            document.getElementById('showMoreBtn').hidden = all.length <= DISPLAY_LIMIT;
+            if (all.length > DISPLAY_LIMIT) {
+                document.getElementById('showMoreBtn').textContent = showAll
+                    ? 'Show less'
+                    : `Show all members (${all.length})`;
+            }
+        }
+
+        function toggleMember(card) {
+            card.classList.toggle('expanded');
+        }
+
+        function showMore() {
+            showAll = !showAll;
+            renderMembers();
+        }
+
+        function pickAvatar(name) {
+            const input = document.createElement('input');
+            input.type = 'file';
+            input.accept = 'image/*';
+            input.onchange = function() {
+                const file = input.files[0];
+                if (!file) return;
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    const avatars = getAvatars();
+                    avatars[name] = e.target.result;
+                    localStorage.setItem(AVATAR_KEY, JSON.stringify(avatars));
+                    renderMembers();
+                };
+                reader.readAsDataURL(file);
+            };
+            input.click();
         }
 
         function escapeHtml(s) {
+            if (!s) return '';
             const d = document.createElement('div');
             d.textContent = s;
             return d.innerHTML;
         }
+        function escapeAttr(s) {
+            return escapeHtml(s).replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+        }
 
         const SUBMIT_EMAIL = 'hollysun8798@gmail.com';
+
+        // Avatar preview in the form
+        document.getElementById('regAvatar').addEventListener('change', function(e) {
+            const file = this.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = function(ev) {
+                document.getElementById('regAvatarPreview').src = ev.target.result;
+            };
+            reader.readAsDataURL(file);
+        });
 
         document.getElementById('registerForm').addEventListener('submit', function(e) {
             e.preventDefault();
             const name = document.getElementById('regName').value.trim();
+            const school = document.getElementById('regSchool').value.trim();
             const email = document.getElementById('regEmail').value.trim();
+            const avatarInput = document.getElementById('regAvatar');
             this.reset();
+            document.getElementById('regAvatarPreview').src = "data:image/svg+xml;utf8,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20width='80'%20height='80'%3E%3Crect%20width='80'%20height='80'%20rx='40'%20fill='%23d8f3dc'/%3E%3Ctext%20x='40'%20y='50'%20font-size='32'%20text-anchor='middle'%20fill='%232d6a4f'%3E%2B%3C/text%3E%3C/svg%3E";
 
             const regs = getRegistrations();
-            regs.push({ name, email, date: new Date().toISOString() });
+            regs.push({ name, school, email, date: new Date().toISOString() });
             localStorage.setItem(STORAGE_KEY, JSON.stringify(regs));
+
+            if (avatarInput.files[0]) {
+                const reader = new FileReader();
+                reader.onload = function(ev) {
+                    const avatars = getAvatars();
+                    avatars[name] = ev.target.result;
+                    localStorage.setItem(AVATAR_KEY, JSON.stringify(avatars));
+                    renderMembers();
+                };
+                reader.readAsDataURL(avatarInput.files[0]);
+            }
             renderMembers();
 
             if (SUBMIT_EMAIL.includes('example.com')) return;
@@ -329,6 +452,7 @@
                 headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
                 body: JSON.stringify({
                     name: name,
+                    school: school,
                     email: email,
                     _subject: 'New Environment Club member!',
                     _template: 'table'
